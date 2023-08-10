@@ -3,13 +3,13 @@
 #' @param incidence calculate incidence? 
 calc_prevalence <- function(x, incidence = FALSE, sum = FALSE) {
   if (incidence) {
-    
+
     ## subset only participants without the eating disorder (i.e., for incidence)
     elig_parts <- bp |>
       select(id, paste0(x, ".00")) |>
       filter(!!rlang::sym(paste0(x, ".00")) == 0) |>
       pull(id)
-    
+
     ## determine whether the participants developed the eating disorder during the study
     tmp <- bp |>
       select(id, starts_with(x)) |>
@@ -19,9 +19,9 @@ calc_prevalence <- function(x, incidence = FALSE, sum = FALSE) {
       drop_na() |>
       group_by(id) |>
       summarize(dev_ed = max(value, na.rm = TRUE)) 
-    
+ 
   } else {
-    
+  
     ## calculate prevalence, this includes baseline eating disorder
     tmp <- bp |>
       select(id, starts_with(x)) |>
@@ -56,7 +56,6 @@ calc_prevalence_ci <- function(x, incidence = FALSE) {
       filter(!!rlang::sym(paste0(x, ".00")) == 0) |>
       pull(id)
     
-    
     ## extract a vector indicating whether the eating disorder was observed (1) or not (0)
     y <- bp |> 
       select(id, starts_with(x)) |>
@@ -67,20 +66,20 @@ calc_prevalence_ci <- function(x, incidence = FALSE) {
       group_by(id) |>
       summarize(dev_ed = max(value, na.rm = TRUE)) |>
       pull(dev_ed)
-    
+
     ## what proportion of participants had the eating disorder?
     p_hat <- mean(y)
-    
+
     ## calculate the 95% CI using the normal approximation
     se <- sqrt((p_hat * (1 - p_hat)) / length(y))
     ci <- (p_hat + c(-1.96, 1.96) * se)
     p_hat <- round(p_hat * 100, 1)
     ci <- round(ci * 100, 1)
-    
+
     ## return the proportion and 95% CI
     paste0(p_hat, " (", ci[1], ", ", ci[2], ")")
   } else {
-    
+
     ## extract a vector indicating whether the eating disorder was observed (1) or not (0)
     y <- bp |> 
       select(id, starts_with(x)) |>
@@ -108,6 +107,8 @@ calc_prevalence_ci <- function(x, incidence = FALSE) {
 #' Calculate incidence per 100,000 person years
 #' @param x the name of eating disorder
 calc_incidence_person_yrs <- function(x) {
+  
+  ## create a month/year data frame excluding baseline
   my <- tibble(month = c(paste0("0",1:9), 
     paste0("1",0:9),
     paste0("2",0:9),
@@ -115,19 +116,27 @@ calc_incidence_person_yrs <- function(x) {
     paste0("4",0:8)),
     year = rep(c(1, 2, 3, 4), c(12, 12, 12, 12)))
   
+  ## calculate the total number of months and years per person
   tmp <- bp |> 
     select(id, starts_with(x)) |>
     pivot_longer(cols = -id) |>
     mutate(month = str_split_fixed(name, "[.]", n = 2)[, 2]) |>
     inner_join(my, by = "month") |>
+    
+    ## exclude year 4 because this isn't occurring in most analyses
     filter(year != 4) |>
+    
+    ## dropping the missing data
     drop_na() |>
+    
     group_by(year) |>
     summarize(totl = length(unique(id)),
       totl_mo = n(),
       totl_yr = totl_mo / 12)
   
+  ## calculate the total years
   pop_tf <- sum(tmp$totl)
+  
   incidence <- calc_prevalence(x, incidence = TRUE, sum = TRUE)
   person_yrs <- 100000
   ((incidence / pop_tf) * person_yrs) |>
@@ -137,6 +146,8 @@ calc_incidence_person_yrs <- function(x) {
 #' Calculate the annual prevalence of an eating disorder
 #' @param x the name of eating disorder
 annual_prevalence <- function(x) {
+  
+  ## create a month/year data frame 
   my <- tibble(month = c(paste0("0",0:9), 
     paste0("1",0:9),
     paste0("2",0:9),
@@ -144,6 +155,7 @@ annual_prevalence <- function(x) {
     paste0("4",0:8)),
     year = rep(c(1, 2, 3, 4), c(13, 12, 12, 12)))
   
+  ## exclude year 4 because this isn't occurring in most analyses
   tmp <- bp |> 
     select(id, starts_with(x)) |>
     pivot_longer(cols = -id) |>
@@ -151,12 +163,15 @@ annual_prevalence <- function(x) {
     left_join(my, by = "month") |>
     filter(year != 4) 
   
+  ## calculate whether a participant had the eating disorder in a given year
   tmp |>
     drop_na() |>
     mutate(ed = x) |>
     group_by(id, ed, year) |>
     summarize(dev_ed = max(value)) |>
     ungroup() |>
+
+    ## summarize over persons to find yearly total nubmers of cases
     group_by(ed, year) |>
     summarize(
       annual_prev = sum(dev_ed)) 
@@ -166,12 +181,16 @@ annual_prevalence <- function(x) {
 #' @param x the name of eating disorder
 #' @param summarize should the raw data or summary information be provided?
 calc_epi_dur <- function(x, summarize = FALSE) {
+  
+  ## calculate the duration of the episodes
   epi_dur <- bp |> 
     select(id, starts_with(x)) |>
     select(id, paste0(x, ".00"):paste0(x, ".36")) |>
     pivot_longer(cols = -id) |>
     mutate(time = str_split_fixed(name, "[.]", 2)[,2] |> as.numeric()) |>
     group_by(id) |>
+    
+    ## see calc_len_episodes() below
     mutate(num_months = calc_len_episodes(value)) |>
     filter((value == 1 | is.na(value)) & num_months != 0) |>
     mutate(ed = x,
@@ -193,11 +212,12 @@ calc_epi_dur <- function(x, summarize = FALSE) {
     }
 }
 
-
 #' Calculate remission rate
 #' @param x the name of eating disorder
-#' TODO: Review!!!
+
 calc_remission <- function(x) {
+  
+  ## identify the participants that developed an eating disorder 
   parts_w_ed <- bp |> 
     select(id, starts_with(x)) |>
     select(id, paste0(x, ".00"):paste0(x, ".36")) |>
@@ -207,6 +227,7 @@ calc_remission <- function(x) {
     pull(id) |>
     unique()
   
+  ## identify the timing of the first episode
   first_epi <- bp |> 
     filter(id %in% parts_w_ed) |>
     select(id, starts_with(x)) |>
@@ -217,9 +238,11 @@ calc_remission <- function(x) {
     slice(1) |>
     mutate(time = str_split_fixed(name, "[.]", 2)[,2] |> as.numeric()) |>
     select(id, time)
-  
+
+  ## create a sequence from the start of the first episode to remission
   df <- create_sequence(first_epi)
-  
+
+  ## identify time when eating disorder went into remission
   bp |> 
     filter(id %in% parts_w_ed) |>
     select(id, starts_with(x)) |>
@@ -231,6 +254,8 @@ calc_remission <- function(x) {
     group_by(id) |>
     slice(1) |>
     rename(remission_time = time) |>
+
+    ## join the data back with the time of remission to calculate time-to-remission
     right_join(first_epi, by = join_by(id)) |>
     mutate(time_to_remission = remission_time - time) |>
     rename(episode_time = time) |>

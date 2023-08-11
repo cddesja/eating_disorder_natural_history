@@ -214,9 +214,7 @@ calc_epi_dur <- function(x, summarize = FALSE) {
 
 #' Calculate remission rate
 #' @param x the name of eating disorder
-
 calc_remission <- function(x) {
-  
   ## identify the participants that developed an eating disorder 
   parts_w_ed <- bp |> 
     select(id, starts_with(x)) |>
@@ -283,13 +281,18 @@ create_sequence <- function(x, to = 36) {
 #' Calculate recurrence
 #' @param x the name of eating disorder
 calc_recurrence <- function(x) {
+  ## id participants that remitted and extract
+  ## id and time of remission
   cr <- calc_remission(x)
   tmp <- cr |>
     drop_na() |>
     select(id, remission_time) |>
     rename(time = remission_time)
+
+  ## create vector of time of remit to 36 months
   df <- create_sequence(tmp)
-  
+
+  ## identify time of recurrence
   parts_that_recurred <- bp |> 
     filter(id %in% tmp$id) |>
     select(id, starts_with(x)) |>
@@ -303,10 +306,13 @@ calc_recurrence <- function(x) {
     rename(recurred = value,
       recurred_time = time)
 
+  ## recode 0 if they didn't recur but did remit
   cr <- cr |>
-    full_join(parts_that_recurred |> select(-name), by = join_by(id)) |>
+    full_join(parts_that_recurred 
+      |> select(-name), by = join_by(id)) |>
     mutate(recurred = ifelse(is.na(recurred) & !is.na(time_to_remission), 0, recurred))
   
+  ## return recurred, time of recurrence, and time-to-recurrence
   cr |>
     mutate(ed = x,
       time_to_recurred = recurred_time - remission_time ) |>

@@ -320,14 +320,14 @@ calc_recurrence <- function(x) {
 }
 
 #' Calculate diagnostic progression
-calc_diag_progress <- function(x) {
+calc_diag_progress <- function(x, aan = FALSE) {
 
   ## full
   fx <- paste0("f", x)
   parts_w_fx <- bp |> 
-    select(id, starts_with(fx)) |>
-    select(id, paste0(fx, ".00"):paste0(fx, ".36")) |>
-    pivot_longer(cols = -id) |>
+    dplyr::select(id, dplyr::starts_with(fx)) |>
+    dplyr::select(id, paste0(fx, ".00"):paste0(fx, ".36")) |>
+    tidyr::pivot_longer(cols = -id) |>
     mutate(time = rep(0:36, n_distinct(id))) |>
     filter(value == 1) |>
     group_by(id) |>
@@ -336,8 +336,12 @@ calc_diag_progress <- function(x) {
       full_value = value) |>
     select(-name)
   
-  ## partial 
-  px <- paste0("p", x)
+  ## partial
+  if(aan) {
+    px <- paste0("a", x)
+  } else {
+    px <- paste0("p", x)
+  }
   parts_w_px <- bp |> 
     select(id, starts_with(px)) |>
     select(id, paste0(px, ".00"):paste0(px, ".36")) |>
@@ -349,7 +353,7 @@ calc_diag_progress <- function(x) {
     rename(part_time = time,
       part_value = value) |>
     select(-name)
-  
+
   parts_w_px |>
     left_join(parts_w_fx) |>
     arrange(desc(full_value)) |>
@@ -357,6 +361,25 @@ calc_diag_progress <- function(x) {
       ed = x,
       progress = ifelse(part_time < full_time, 1, 0),
       progress = ifelse(is.na(progress), 0, progress))
+
+  ## Question: What do we do with progression if participants are missing data after 
+  ## being classified as subthreshold?
+
+  ## this code at least requires participants to have at least one observation
+  ## after the occurrence of their partial diagnosis
+  # bp |> 
+  #   filter(id %in% parts_w_px$id) |>
+  #   dplyr::select(id, dplyr::starts_with(fx)) |>
+  #   dplyr::select(id, paste0(fx, ".00"):paste0(fx, ".36")) |>
+  #   tidyr::pivot_longer(cols = -id) |>
+  #   mutate(time = rep(0:36, n_distinct(id))) |>
+  #   right_join(parts_w_px) |>
+  #   select(-name) |>
+  #   group_by(id) |>
+  #   filter(time > part_value) |>
+  #   drop_na() |>
+  #   summarize(totl_value = sum(value)) |>
+  #   arrange(desc(totl_value))
 }
 
 #' Determine what the episodic wave is

@@ -135,15 +135,24 @@ epi_rec |>
 ## diagnostic progression ----
 subthres <- c("an", "bn", "be")
 diag_prog <- subthres |> 
-  map_df(calc_diag_progress)
+  map_df(calc_diag_progress) 
+
 
 diag_prog |>
   group_by(ed) |>
-  summarize(prop = mean(progress) |> round(2),
-    totl = sum(progress))
+  summarize(perc = (mean(progress) * 100) |> round(),
+    totl = sum(progress),
+    n = n())
+
+## atypical anorexia
+calc_diag_progress("an", aan = TRUE) |>
+  group_by() |>
+  summarize(perc = (mean(progress) * 100) |> round(),
+    totl = sum(progress),
+    n = n())    
 
 ## diagnostic crossover ----
-ed_months <- paste(rep(disorders, each = 37), c(paste0("0", 0:9), 10:36), sep = "."); months
+ed_months <- paste(rep(disorders, each = 37), c(paste0("0", 0:9), 10:36), sep = ".")
 
 all_eds <- bp |> 
   select(id, all_of(ed_months)) |>
@@ -154,8 +163,8 @@ all_eds <- bp |>
   select(-time) |>
   filter(value == 1) |>
   group_by(ed, id) |>
-  arrange(months) |>
-  slice(1) |> 
+  slice(1) |>
+  arrange(id, months) |> 
   select(-name, -value) |>
   ungroup()
 
@@ -164,9 +173,52 @@ all_eds_wide <- all_eds |>
 
 all_eds_wide$frst_ed <- names(all_eds_wide)[-1][apply(all_eds_wide |> select(-id), 1, which.min)]
 
+all_eds_wide$ties <- NA
+for(i in 2:8){
+  ## start at the next column to run more efficiently and prevent columns from comparing to self
+  j = i + 1
+  while(j < 10){
+    ## k rows
+    for(k in 1:nrow(all_eds_wide)){
+      if( !is.na(all_eds_wide[k, i]) & !is.na(all_eds_wide[k, j]) ) {
+        if( all_eds_wide[k, i] == all_eds_wide[k, j] ) all_eds_wide$ties[k] = "dupl"
+        }
+      }
+    j = j + 1
+    cat(j)
+    }
+  }
+sum(all_eds_wide$ties == "dupl", na.rm = TRUE)
+
 all_eds_wide |>
   pivot_longer(cols = 2:9) |>
   filter(!is.na(value)) |>
   select(frst_ed, name) |>
-  table() 
+  table()
 ## rows do not need to sum up to ED totals because they are not mutually exclusive!!! In other words, a participant could occur in multiple columns.
+
+totl_frsts = table(all_eds_wide$frst_ed) |>
+  as_tibble(.name_repair = ~ c("frst_ed", "total"))
+
+## table 5 transitions, except 
+disorder_lvls = c("fan", "fbn", "fbe", "fpu", "aan", "pan", "pbn", "pbe")
+
+getOption("width")
+options("width" = 100)
+all_eds_wide |>
+  pivot_longer(cols = 2:9) |>
+  filter(!is.na(value)) |>
+  select(frst_ed, name) |>
+  table() |>
+  as_tibble() |>
+  filter(frst_ed != name) |>
+  left_join(totl_frsts) |>
+  mutate(perc = round(n / total * 100),
+    frst_ed = factor(frst_ed, levels = disorder_lvls),
+    name = factor(name, levels = disorder_lvls),
+    totl_perc = paste0(n, " (", perc, "%)")) |>
+  arrange(frst_ed, name) |>
+  select(-n, -perc) |>
+  pivot_wider(names_from = name, 
+  values_from = totl_perc) |>
+  select(1, 2, 10, 3:9)
